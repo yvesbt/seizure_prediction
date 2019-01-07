@@ -31,15 +31,31 @@ class Patient_data():
     self.segments_type_train = cfg.segments_type_train
     self.segments_type_test = cfg.segments_type_test
     self.preictal_duration = cfg.preictal_duration
-    self.timesteps = cfg.timesteps
-    self.num_input = cfg.num_input
+    self.num_inputs = cfg.num_inputs
+    self.N_features = cfg.N_features
     self.num_classes = cfg.num_classes
     
-    self.segments, self.times, self.seizures_start, self.seizures_end = self.load_data(cfg)
+    self.segments, self.times, self.seizures_start, self.seizures_end = self.load_all_files(cfg.input_files)
+    
     self.N_seizures = len(self.seizures_start)
     self.annotations = self.annotate_data();
-    # ~ self.leave_one_seizure(5)
-    self.k_fold_division(2)
+    self.leave_one_seizure(3)
+    # ~ self.k_fold_division(4)
+  
+  def load_all_files(self, input_files):
+    end=0
+    for i in range(0, len(input_files)):
+      if( i == 0 ):
+        segments_i, times, seizures_start, seizures_end = self.load_data(input_files[i])
+        shape = np.shape(segments_i)
+        segments=np.empty( [shape[0], self.N_features] )
+      else:
+        segments_i ,_ ,_ , _ = self.load_data(input_files[i])
+    shape = np.shape(segments_i)
+    start=end
+    end+=shape[1]
+    segments[:,start:end]=segments_i
+    return segments, times, seizures_start, seizures_end
     
   def annotate_data(self):
     annotations = np.zeros(len(self.times),dtype=int)
@@ -62,7 +78,7 @@ class Patient_data():
     assign_to_set = np.zeros(len(self.annotations))
     
     indices = np.arange(0,len(self.segments))
-    # ~ np.random.shuffle(indices)
+    np.random.shuffle(indices)
     for i in range(0,int(len(indices)*(1-1./k))):
       idx = indices[i]
       if(self.annotations[idx] == 0):
@@ -99,22 +115,21 @@ class Patient_data():
       assign_to_set : 1 for train_wos, 2 train_ws, 3 test_wos, 4 test_ws
     '''
     assign_to_set = np.zeros(len(self.annotations))
-     
     test_start_ws = bisect.bisect_left(self.times, seizure_start - self.preictal_duration)
     test_end_ws = bisect.bisect_left(self.times, seizure_start)
+    print(test_start_ws,test_end_ws)
     length_ws = 0
     for idx in range(test_start_ws,test_end_ws):
       if(self.annotations[idx] == 1):
         assign_to_set[idx] = 4
         length_ws+=1
-    idx = test_start_wos = bisect.bisect_right(self.times, seizure_end)
+    idx = bisect.bisect_right(self.times, seizure_end)
     length_wos=0
     while( length_wos < length_ws and idx<len(self.annotations) ):
       if( self.annotations[idx] == 0):
         assign_to_set[idx] = 3
         length_wos+=1
       idx+=1
-    
     for i in range(0, len(self.annotations)):
       if(assign_to_set[i] == 0):
         if( self.annotations[i] == 0 ):
@@ -143,21 +158,21 @@ class Patient_data():
         self.test_ws.append(idx)
 
   def train_next_batch(self,batch_size, num_input):
-    train_batch = np.empty( [batch_size, num_input, self.N_features] )
-    train_annotations = np.empty( [batch_size,2] )
+    train_batch = np.empty( [batch_size, 1, self.N_features , self.num_inputs] )
+    train_annotations = np.empty( [batch_size, 2] )
     for i in range(0,batch_size):
       p = random.random()
       if(p<0.5):
-        train_batch[i] = self.get_batch(self.train_wos, num_input, self.segments_type_train)
+        train_batch[i] = self.get_batch(self.train_wos, self.num_inputs, self.segments_type_train)
         train_annotations[i] = [1,0]
       else:
-        train_batch[i] = self.get_batch(self.train_ws, num_input, self.segments_type_train)
+        train_batch[i] = self.get_batch(self.train_ws, self.num_inputs, self.segments_type_train)
         train_annotations[i] = [0,1]
     return train_batch, train_annotations
   
   def get_test_batch(self,batch_size, num_input):
-    test_batch = np.empty( [batch_size, num_input, self.N_features] )
-    test_annotations = np.empty( [batch_size,2] )
+    test_batch = np.empty( [batch_size, 1, self.N_features , self.num_inputs]  )
+    test_annotations = np.empty( [batch_size, 2] )
     for i in range(0,batch_size):
       p = random.random()
       if(p<0.5):
@@ -169,7 +184,7 @@ class Patient_data():
     return test_batch, test_annotations
     
   def get_batch(self, idx_set, num_input, data_type):
-    batch = np.empty([ num_input,self.N_features])
+    batch = np.empty([ self.N_features, num_input])
     if(data_type == "random"):
       batch_indices = random.sample(idx_set, num_input)
     elif(data_type == "continuous"):
@@ -179,7 +194,7 @@ class Patient_data():
         data_continuous = self.check_continuous(idx_set, idx, num_input)
       batch_indices=range(idx, idx+num_input)
     for i in range(0,num_input):
-      batch[i,:] = self.segments[ batch_indices[i] ]
+      batch[:,i] = self.segments[ batch_indices[i] ]
     return batch
   
   def check_continuous(self, idx_set, idx, num_input):
@@ -188,8 +203,8 @@ class Patient_data():
     else:
       return False
     
-  def load_data(self, cfg):
-    f=open(cfg.input_file,'r')
+  def load_data(self, input_file):
+    f=open(input_file,'r')
     line = f.readline()
     seizures_start=[]
     seizures_end=[]
@@ -199,8 +214,8 @@ class Patient_data():
       seizures_end.append( seizures_time[2*i+1] )
     
     lines = [line.rstrip().split(' ') for line in f]
-    self.N_features = len(lines[0])-1
-    segments=np.empty([len(lines),self.N_features+1])
+    N_features = len(lines[0])-1
+    segments=np.empty([len(lines),N_features+1])
 
     segments = np.float32( lines )
     times = segments[:,0]

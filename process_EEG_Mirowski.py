@@ -22,15 +22,20 @@ sys.path.insert(0, "./cpp/")
 import dstl
 
 class Config():
+  '''
+  Config class, init take data folder as well as patient number
+  the rest of the parameters is to determine which feature to compute,
+  which channels to take into account, which frequencies to sample,
+  and where to store the features. 
+  '''
   def __init__(self, data_path="./", patient=1):
     self.patient = patient
     self.patient_folder = 'chb{:02d}/'.format(patient)
     self.output_dir = "./data/"+self.patient_folder+"/"
     self.data_path = data_path
     #data parameters
-    self.sampling=256 #Hz
-    self.duration=5 # duration of samples to train
-    self.preictal_duration=1800
+    self.sampling=256 #Hz, specified by data
+    self.duration=5 # duration of samples to train in seconds
     self.freqs = np.array([[0.1,4],[4,7],[7,13],[13,15],[14,30],[30,45],[65,120]])
     self.channels_names=["FP1-F7","F7-T7","T7-P7","P7-O1","FP1-F3","F3-C3",
                          "C3-P3","P3-O1","FP2-F4","F4-C4","C4-P4","P4-O2",
@@ -38,7 +43,8 @@ class Config():
     self.N_channels = len(self.channels_names)
     # ~ self.features_name = ["max_correlation","nonlinear_interdependence","DSTL","SPLV"]
     # ~ self.features_name = ["max_correlation","SPLV"]
-    self.features_name = ["SPLV"]
+    # ~ self.features_name = ["nonlinear_interdependence"]
+    self.features_name = ["DSTL"]
     # ~ self.features_name = ["max_correlation"]
     self.features_len={}
     self.features_len["max_correlation"] = int(self.N_channels*(self.N_channels-1)/2.)
@@ -55,7 +61,6 @@ class EEG_data():
     
     self.sampling = cfg.sampling
     self.duration = cfg.duration
-    self.preictal_duration = cfg.preictal_duration
     self.sample_size=cfg.sampling*cfg.duration
     self.N_channels = cfg.N_channels
     self.eeg_signals = eeg_signals
@@ -88,6 +93,10 @@ class EEG_data():
     return feature
 
   def get_all_features(self, feature_name):
+    ''' Computes all the features corresponding to feature_name in parallel
+    input: a string with the name of the feature to compute 
+    output: features corresponding to each segments
+    '''
     N_segments = len(self.segments_idx)
     
     mp_batch_arr = mp.Array(ctypes.c_double, N_segments * (self.features_len[feature_name]+1) )
@@ -118,6 +127,10 @@ class EEG_data():
     self.segments_idx = np.linspace(0,len(self.eeg_signals._data[0]), N_segments, dtype=int, endpoint = False)[0:-1]
       
   def get_max_correlation(self, signal):
+  ''' Comptes the maximum of correlations between the channels of a signal
+  input: EEG signal in RawEDF formato
+  output: correlation matrix (1D)
+  '''
     n_channels = len(signal.ch_names)
     corr_coeffs = np.empty( int(n_channels*(n_channels-1)/2) )
     auto_corr_coeffs = self.get_auto_corr_coeffs(signal);
@@ -146,6 +159,10 @@ class EEG_data():
     return max_corr
   
   def nonlinear_interdependence(self, signal):
+  ''' Compute the nonlinear interdependance between all channels of a signal
+  input: signal in RawEDF format
+  output: noninear interdependance matrix (1D)
+  '''
     n_channels = len(signal.ch_names)
     embedded_signals = self.embed_signals(signal)
     full_S = self.get_full_S(embedded_signals)
@@ -158,6 +175,10 @@ class EEG_data():
     return S
     
   def embed_signals(self,signal,d=10,lag=6):
+  ''' embed a signal in d dimension, with lag delay
+  input: signal in RawEDF format, d dimension and lag delay
+  output: embedded signal in numpy format
+  ''' 
     n_channels = len(signal.ch_names)
     len_signal =  len(signal._data[0])
     embedded_signals = np.empty([n_channels,len_signal-(d-1)*lag,d])
@@ -169,6 +190,10 @@ class EEG_data():
     return embedded_signals
     
   def get_full_S(self, embedded_signals):
+  ''' Computes the nonlinear interdependance matrix
+  input: embedded signals in numpy foramt
+  output: S matrix
+  '''
     n_channels = len(embedded_signals)
     full_S=np.empty([n_channels, n_channels])
     for channel_1 in range(0, n_channels):
@@ -177,7 +202,11 @@ class EEG_data():
           full_S[channel_1,channel_2] = self.get_S(embedded_signals[channel_1,:,:],embedded_signals[channel_2,:,:])
     return full_S
   
-  def get_S(self, xa, xb): 
+  def get_S(self, xa, xb):
+  ''' Compute the nonlinear interdependance between two signals
+  inputs: embedded signals in numpy format
+  output: nonlinear interdependance value
+  '''
     K = 5
     nbrs_a = NearestNeighbors(n_neighbors=K+1, algorithm='ball_tree', metric='euclidean').fit(xa)
     nbrs_b = NearestNeighbors(n_neighbors=K+1, algorithm='ball_tree', metric='euclidean').fit(xb)
@@ -196,6 +225,12 @@ class EEG_data():
     return S
     
   def get_DSTL(self, signal):
+    '''
+    Compute the DSTL of a signal
+    Input: signal in RawEDF format
+    Output DSTL matrix
+    Most parts are in C++, as loops are not efficient in Python
+    '''
     dt=12
     n_channels = len(signal.ch_names)
     embedded_signals = self.embed_signals(signal,d=7,lag=6)
@@ -219,6 +254,10 @@ class EEG_data():
     return DSTL
     
   def get_perturbations(self, embedded_signal, i, dt):
+    '''
+    Find the transverse in the phase space. This function has
+    been implemented in C++, as it is much faster.
+    '''
     j = self.get_transverse(embedded_signal,i,dt)
     if(j==-1):
       print("not found")
@@ -227,6 +266,9 @@ class EEG_data():
     return d_0,d_dt
       
   def get_transverse(self, embedded_signal, i, dt):
+    '''
+    see C++ code
+    '''
     V = 0.1
     b= 0.05
     c= 0.1
@@ -266,6 +308,9 @@ class EEG_data():
         c+=0.1
       
   def get_delta(self, embedded_signal, tau, IDIST3, i):
+    '''
+    see C++ code
+    '''
     delta=0
     for t in range(tau,IDIST3):
       if( i+t < len(embedded_signal)):
@@ -275,14 +320,27 @@ class EEG_data():
     return delta
    
   def unit_vector(self, vector):
+  '''
+  see C++ code
+  '''
     return vector / np.linalg.norm(vector)
 
   def angle(self, x1, x2):
+  '''
+  Compute angle between two n-vectors
+  '''
     x1_u = self.unit_vector(x1)
     x2_u = self.unit_vector(x2)
     return abs(np.arccos(np.clip(np.dot(x1_u, x2_u), -1.0, 1.0)))
   
   def get_SPLV(self, signals):
+  ''' Computes phase-locking synchrony between all channels.
+  Note that we use hilbert transform rather than Gabor, as 
+  suggested in 
+  Mirowski, Piotr, et al. "Classification of patterns of EEG synchronization for seizure prediction." Clinical neurophysiology 120.11 (2009): 1927-1940.
+  Input: signal in RawEDF format
+  Output: SPLV matrix
+  '''
     n_channels = len(signals._data)
     filtered_signals = self.filter_signal(signals)
     hilbert_signals = self.get_hilbert_signals(filtered_signals)
@@ -296,6 +354,11 @@ class EEG_data():
     return SPLV
   
   def PLV(self, hilbert_signal, channel_a, channel_b):
+  '''
+  Computes phase-locking synchrony between all channels.
+  inputs: Hilbert transform of a signal, and integer number of the considered channels
+  output: PLV value
+  ''' 
     phase_a= np.unwrap(np.angle(hilbert_signal[channel_a,:]))
     phase_b= np.unwrap(np.angle(hilbert_signal[channel_b,:]))
     PLV = np.exp( 1j*(phase_a-phase_b) )
@@ -352,7 +415,11 @@ class EEG_data():
     return scipy.signal.filtfilt(b, a, signals._data)
     
 class Patient_data():
-  
+  '''
+  Class to load all the files related to a patient
+  input: config fig
+  output: writes all the requested feature in cfg.output_dir
+  '''
   def __init__(self, cfg):
     self.data_path = cfg.data_path
     self.patient_folder = cfg.patient_folder

@@ -4,6 +4,11 @@ from tensorflow.python.client import device_lib
 
 
 def CNN(x, cfg):
+  ''' create a neural network corresponding to the one in
+  Mirowski, Piotr, et al. "Classification of patterns of EEG synchronization for seizure prediction." Clinical neurophysiology 120.11 (2009): 1927-1940.
+  '''
+  print(x)
+  x=tf.transpose(x,[0,2,3,1])
   print(x)
   conv1 = tf.layers.conv2d(
       inputs=x,
@@ -11,7 +16,7 @@ def CNN(x, cfg):
       strides=1,
       kernel_size=[1,13],
       padding="valid",
-      data_format='channels_first',
+      data_format='channels_last',
       activation=tf.nn.relu)
   print(conv1)
   pool1 = tf.layers.average_pooling2d(
@@ -19,15 +24,15 @@ def CNN(x, cfg):
       pool_size=[1,2],
       strides=[1,2],
       padding="valid",
-      data_format='channels_first')
+      data_format='channels_last')
   print(pool1)
   conv2 = tf.layers.conv2d(
       inputs=pool1,
       filters=5,
       strides=1,
-      kernel_size=[cfg.num_input, 9],
+      kernel_size=[cfg.N_features, 9],
       padding="valid",
-      data_format='channels_first',
+      data_format='channels_last',
       activation=tf.nn.relu)
   print(conv2)
   pool2 = tf.layers.average_pooling2d(
@@ -35,7 +40,7 @@ def CNN(x, cfg):
       pool_size=[1,2],
       strides=[1,2],
       padding="valid",
-      data_format='channels_first')
+      data_format='channels_last')
   print(pool2)
   conv3 = tf.layers.conv2d(
       inputs=pool2,
@@ -44,7 +49,10 @@ def CNN(x, cfg):
       kernel_size=[1, 8],
       padding="valid",
       activation=tf.nn.relu,
-      data_format='channels_first')
-  conv3=tf.reshape(conv3,[1,1,3])
+      data_format='channels_last')
+  print(conv3)
   output = tf.layers.dense(conv3, cfg.num_classes, activation=None)
+  print(output)
+  output = tf.reshape(output, [ tf.shape(output)[0] , 2 ])
+  print(output)
   return output
