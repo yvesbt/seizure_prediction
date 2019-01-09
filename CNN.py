@@ -17,7 +17,8 @@ def CNN(x, cfg):
       kernel_size=[1,13],
       padding="valid",
       data_format='channels_last',
-      activation=tf.nn.relu)
+      activation=tf.nn.relu,
+      kernel_regularizer= tf.contrib.layers.l1_regularizer(scale=0.001))
   print(conv1)
   pool1 = tf.layers.average_pooling2d(
       conv1,
@@ -33,7 +34,8 @@ def CNN(x, cfg):
       kernel_size=[cfg.N_features, 9],
       padding="valid",
       data_format='channels_last',
-      activation=tf.nn.relu)
+      activation=tf.nn.relu,
+      kernel_regularizer= tf.contrib.layers.l1_regularizer(scale=0.001))
   print(conv2)
   pool2 = tf.layers.average_pooling2d(
       conv2,
@@ -49,7 +51,8 @@ def CNN(x, cfg):
       kernel_size=[1, 8],
       padding="valid",
       activation=tf.nn.relu,
-      data_format='channels_last')
+      data_format='channels_last',
+      kernel_regularizer= tf.contrib.layers.l1_regularizer(scale=0.001))
   print(conv3)
   output = tf.layers.dense(conv3, cfg.num_classes, activation=None)
   print(output)

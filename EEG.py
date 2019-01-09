@@ -10,6 +10,7 @@ import numpy as np
 import scipy
 import scipy.stats
 import random             
+import re
 import matplotlib.pyplot as plt
 import pywt
 import networkx as nx
@@ -31,12 +32,16 @@ class Patient_data():
     self.segments_type_train = cfg.segments_type_train
     self.segments_type_test = cfg.segments_type_test
     self.preictal_duration = cfg.preictal_duration
+    self.channels_names = cfg.channels_names
+    self.selected_channels = cfg.selected_channels
+    self.N_tot_features = cfg.N_tot_features
     self.num_inputs = cfg.num_inputs
     self.N_features = cfg.N_features
+    self.m_feature = cfg.m_feature
     self.num_classes = cfg.num_classes
     
     self.segments, self.times, self.seizures_start, self.seizures_end = self.load_all_files(cfg.input_files)
-    
+
     self.N_seizures = len(self.seizures_start)
     self.annotations = self.annotate_data();
     self.leave_one_seizure(3)
@@ -45,17 +50,47 @@ class Patient_data():
   def load_all_files(self, input_files):
     end=0
     for i in range(0, len(input_files)):
+      feature = re.search('chb[0-9]*/(.*).dat', input_files[i] ).group(1)
+      m = self.m_feature[feature]
+      idx = self.get_indices(self.selected_channels, m).astype(int)
+
       if( i == 0 ):
         segments_i, times, seizures_start, seizures_end = self.load_data(input_files[i])
         shape = np.shape(segments_i)
         segments=np.empty( [shape[0], self.N_features] )
       else:
         segments_i ,_ ,_ , _ = self.load_data(input_files[i])
-    shape = np.shape(segments_i)
-    start=end
-    end+=shape[1]
-    segments[:,start:end]=segments_i
+        
+      segments_i = segments_i[:,idx]
+      shape = np.shape(segments_i)
+      start=end
+      end+=shape[1]
+      print(start,end)
+      segments[:,start:end]=segments_i
     return segments, times, seizures_start, seizures_end
+ 
+  def get_indices(self, selected_channels, m):
+    '''
+    input: selected channels
+    output: indices corresponding to upper diagonal for selected channels in config
+    '''
+    N_tot_channels = len(self.channels_names)
+    selected_channels_bool = np.array([False]*N_tot_channels)
+    selected_channels_bool[selected_channels] = True
+    idx_one=np.empty(0,dtype=int)
+    
+    c=0
+    for i in range(0,N_tot_channels-1):
+      for j in range(i+1,N_tot_channels):
+        if( selected_channels_bool[i] and selected_channels_bool[j] ):
+          idx_one=np.append(idx_one,c)
+        c+=1
+    N_one_feature = int(N_tot_channels * (N_tot_channels-1)/2.)
+    idx=np.empty(0,dtype=int)
+    for i in range(0, m):
+      idx=np.append(idx, idx_one+N_one_feature*i)
+    print(idx)
+    return idx
     
   def annotate_data(self):
     annotations = np.zeros(len(self.times),dtype=int)
@@ -78,7 +113,7 @@ class Patient_data():
     assign_to_set = np.zeros(len(self.annotations))
     
     indices = np.arange(0,len(self.segments))
-    np.random.shuffle(indices)
+    # ~ np.random.shuffle(indices)
     for i in range(0,int(len(indices)*(1-1./k))):
       idx = indices[i]
       if(self.annotations[idx] == 0):
@@ -123,7 +158,8 @@ class Patient_data():
       if(self.annotations[idx] == 1):
         assign_to_set[idx] = 4
         length_ws+=1
-    idx = bisect.bisect_right(self.times, seizure_end)
+    idx = bisect.bisect_right(self.times, seizure_end+self.preictal_duration)
+    # ~ idx = bisect.bisect_right(self.times, seizure_end)
     length_wos=0
     while( length_wos < length_ws and idx<len(self.annotations) ):
       if( self.annotations[idx] == 0):
