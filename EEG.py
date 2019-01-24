@@ -28,6 +28,10 @@ class Patient_data():
     times are stored separately to feature in times
   '''
   def __init__(self, cfg):
+    '''
+      Here the parameters important for the class are copied, so it is obvious which paramters are relevant here
+      (However it may be simpler to change it to self.cfg=cfg)
+    '''
     self.data_path = cfg.data_path
     self.segments_type_train = cfg.segments_type_train
     self.segments_type_test = cfg.segments_type_test
@@ -48,6 +52,10 @@ class Patient_data():
     # ~ self.k_fold_division(4)
   
   def load_all_files(self, input_files):
+    ''' 
+      load all_files (one per feature). The feature name is taken from the
+      input file name. Only the feature corresponding to selected channels are stored.
+    '''
     end=0
     for i in range(0, len(input_files)):
       feature = re.search('chb[0-9]*/(.*).dat', input_files[i] ).group(1)
@@ -228,7 +236,7 @@ class Patient_data():
       while(not data_continuous):
         idx = random.randrange( 0, len(idx_set) - num_input )
         data_continuous = self.check_continuous(idx_set, idx, num_input)
-      batch_indices=range(idx, idx+num_input)
+      batch_indices=[idx_set[i] for i in range(idx, idx+num_input)]
     for i in range(0,num_input):
       batch[:,i] = self.segments[ batch_indices[i] ]
     return batch

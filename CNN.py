@@ -6,6 +6,7 @@ from tensorflow.python.client import device_lib
 def CNN(x, cfg):
   ''' create a neural network corresponding to the one in
   Mirowski, Piotr, et al. "Classification of patterns of EEG synchronization for seizure prediction." Clinical neurophysiology 120.11 (2009): 1927-1940.
+  Note that this network can only be used with num_inputs=60 in config file.
   '''
   print(x)
   x=tf.transpose(x,[0,2,3,1])

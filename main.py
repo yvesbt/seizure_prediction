@@ -52,9 +52,9 @@ loss_op+=l1_loss
 # ~ loss_op = tf.losses.sigmoid_cross_entropy(multi_class_labels = Y, logits = logits)
 print("Y",Y)
 print("logits",logits)
-# ~ optimizer = tf.train.GradientDescentOptimizer(learning_rate=cfg.learning_rate).minimize(loss_op)
+optimizer = tf.train.GradientDescentOptimizer(learning_rate=cfg.learning_rate).minimize(loss_op)
 # ~ optimizer = tf.train.MomentumOptimizer(learning_rate=cfg.learning_rate, momentum=0.9).minimize(loss_op)
-optimizer = tf.train.AdamOptimizer(cfg.learning_rate).minimize(loss_op)
+# ~ optimizer = tf.train.AdamOptimizer(cfg.learning_rate).minimize(loss_op)
 # ~ optimizer = tf.train.AdagradOptimizer(cfg.learning_rate).minimize(loss_op)
 
 # Evaluate model (with test logits, for dropout to be disabled)
