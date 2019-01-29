@@ -51,7 +51,7 @@ class Config():
     self.features_len["nonlinear_interdependence"] = int(self.N_channels*(self.N_channels-1)/2.)
     self.features_len["DSTL"] = int(self.N_channels*(self.N_channels-1)/2.)
     self.features_len["SPLV"] = int(self.N_channels*(self.N_channels-1)/2.*len(self.freqs))
-    self.features_len["univariate"] = int(self.N_channels*25)
+    self.features_len["univariate"] = int(self.N_channels*24)
     print(self.features_len["univariate"])
     self.N_features=0
     
@@ -131,6 +131,13 @@ class EEG_data():
     self.segments_idx = np.linspace(0,len(self.eeg_signals._data[0]), N_segments, dtype=int, endpoint = False)[0:-1]
   
   def get_univariate_features(self, signal):
+    '''
+      Computes various univariate features from a signal.
+      The description of the features can be found in:
+      Tsiouris, et al. "A Long Short-Term Memory deep learning network for the prediction of epileptic seizures using EEG signals
+      ." Computers in biology and medicine 99 (2018): 24-37.
+      zero crossings was removed as it made the neural networks unable to converge
+    '''
     moments = self.compute_moments(signal)
     zero_crossings = self.get_zero_crossings(signal)
     peak_to_peak = self.get_peak_to_peak(signal)
@@ -140,7 +147,7 @@ class EEG_data():
     dwt_coeffs = self.discrete_wavelet_transform(signal)
     
     features=moments.flatten() # 5xN
-    features = np.hstack([features, zero_crossings.flatten()]) # 1xN
+    # ~ features = np.hstack([features, zero_crossings.flatten()]) # 1xN
     features = np.hstack([features, peak_to_peak.flatten()]) # 1xN
     features = np.hstack([features, absolute_area.flatten()]) # 1xN
     features = np.hstack([features, psd_ratio.flatten()]) # 8xN

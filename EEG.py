@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import pywt
 import networkx as nx
 
-random.seed(0)
+random.seed(1)
 
 class Patient_data():
   '''
@@ -29,7 +29,7 @@ class Patient_data():
   '''
   def __init__(self, cfg):
     '''
-      Here the parameters important for the class are copied, so it is obvious which paramters are relevant here
+      Here the parameters important for the class are copied, so it is clear which paramters are relevant here
       (However it may be simpler to change it to self.cfg=cfg)
     '''
     self.data_path = cfg.data_path
@@ -40,15 +40,17 @@ class Patient_data():
     self.selected_channels = cfg.selected_channels
     self.N_tot_features = cfg.N_tot_features
     self.num_inputs = cfg.num_inputs
+    self.feature_type = cfg.feature_type
     self.N_features = cfg.N_features
     self.m_feature = cfg.m_feature
+    self.u_feature = cfg.u_feature
     self.num_classes = cfg.num_classes
     
     self.segments, self.times, self.seizures_start, self.seizures_end = self.load_all_files(cfg.input_files)
 
     self.N_seizures = len(self.seizures_start)
     self.annotations = self.annotate_data();
-    self.leave_one_seizure(3)
+    self.leave_one_seizure(1)
     # ~ self.k_fold_division(4)
   
   def load_all_files(self, input_files):
@@ -59,8 +61,7 @@ class Patient_data():
     end=0
     for i in range(0, len(input_files)):
       feature = re.search('chb[0-9]*/(.*).dat', input_files[i] ).group(1)
-      m = self.m_feature[feature]
-      idx = self.get_indices(self.selected_channels, m).astype(int)
+      idx = self.get_indices(self.selected_channels, feature).astype(int)
 
       if( i == 0 ):
         segments_i, times, seizures_start, seizures_end = self.load_data(input_files[i])
@@ -73,32 +74,50 @@ class Patient_data():
       shape = np.shape(segments_i)
       start=end
       end+=shape[1]
-      print(start,end)
+      print("start end:",start,end)
       segments[:,start:end]=segments_i
+    print("shape:",np.shape(segments))
+    start_uni = self.N_features - 18*25
+    self.N_features-=18*20
+    # ~ print(segments[:,start_uni+18*5:start_uni+18*6])
+    # ~ segments = np.delete(segments, np.s_[start_uni+18*5:start_uni+18*6],axis=1)
+    self.N_features = np.shape(segments)[1]
+    # ~ segments=segments[:,:-18*20]
+    print("shape:",np.shape(segments))
     return segments, times, seizures_start, seizures_end
  
-  def get_indices(self, selected_channels, m):
+  def get_indices(self, selected_channels, feature):
     '''
-    input: selected channels
+    input: selected channels, nand feature name
     output: indices corresponding to upper diagonal for selected channels in config
     '''
+    feature_type = self.feature_type[feature]
     N_tot_channels = len(self.channels_names)
     selected_channels_bool = np.array([False]*N_tot_channels)
     selected_channels_bool[selected_channels] = True
-    idx_one=np.empty(0,dtype=int)
-    
-    c=0
-    for i in range(0,N_tot_channels-1):
-      for j in range(i+1,N_tot_channels):
-        if( selected_channels_bool[i] and selected_channels_bool[j] ):
-          idx_one=np.append(idx_one,c)
-        c+=1
-    N_one_feature = int(N_tot_channels * (N_tot_channels-1)/2.)
     idx=np.empty(0,dtype=int)
-    for i in range(0, m):
-      idx=np.append(idx, idx_one+N_one_feature*i)
+    idx_one=np.empty(0,dtype=int)
+    if feature_type=="bivariate":
+      m = self.m_feature[feature]
+      c = 0
+      for i in range(0,N_tot_channels-1):
+        for j in range(i+1,N_tot_channels):
+          if( selected_channels_bool[i] and selected_channels_bool[j] ):
+            idx_one=np.append(idx_one,c)
+          c+=1
+      N_one_feature = int(N_tot_channels * (N_tot_channels-1)/2.)
+      for i in range(0, m):
+        idx=np.append(idx, idx_one+N_one_feature*i)
+            
+    elif feature_type=="univariate":
+      u = self.u_feature[feature]
+      idx_one=np.array(selected_channels)
+      print(idx_one)
+      for i in range(0, u):
+        idx=np.append(idx, idx_one+N_tot_channels*i)
+
     print(idx)
-    return idx
+    return idx 
     
   def annotate_data(self):
     annotations = np.zeros(len(self.times),dtype=int)
@@ -160,13 +179,14 @@ class Patient_data():
     assign_to_set = np.zeros(len(self.annotations))
     test_start_ws = bisect.bisect_left(self.times, seizure_start - self.preictal_duration)
     test_end_ws = bisect.bisect_left(self.times, seizure_start)
+    print("keep:",test_start_ws,test_end_ws)
     print(test_start_ws,test_end_ws)
     length_ws = 0
     for idx in range(test_start_ws,test_end_ws):
       if(self.annotations[idx] == 1):
         assign_to_set[idx] = 4
         length_ws+=1
-    idx = bisect.bisect_right(self.times, seizure_end+self.preictal_duration)
+    idx = bisect.bisect_right(self.times, seizure_end+240*60)
     # ~ idx = bisect.bisect_right(self.times, seizure_end)
     length_wos=0
     while( length_wos < length_ws and idx<len(self.annotations) ):
@@ -180,7 +200,31 @@ class Patient_data():
           assign_to_set[i] = 1
         if( self.annotations[i] == 1 ):
           assign_to_set[i] = 2
+          
+    assign_to_set = self.discard_data(assign_to_set)
     self.assign_sets(assign_to_set)
+  
+  def discard_data(self, assign_to_set):
+    '''
+    Remove segements 4h before interictal and 4h after
+    input : assign_to_set with len(segments) indices from 1 to 4
+    return: assign to set with idx of removed segments set to 0
+    '''
+    
+    for i in range(0,len(self.seizures_start)):
+      seizure_start = self.seizures_start[i]
+      seizure_end = self.seizures_end[i]
+      discard_prei_start = bisect.bisect_left(self.times, seizure_start - 240*60)
+      discard_prei_end = bisect.bisect_left(self.times, seizure_start - self.preictal_duration)
+      discard_posti_start = bisect.bisect_right(self.times, seizure_end )
+      discard_posti_end = bisect.bisect_right(self.times, seizure_end + 240*60)
+      print("discard:",self.times[discard_prei_start],self.times[discard_prei_end])
+      for idx in range( discard_prei_start, discard_prei_end):
+        assign_to_set[idx]=0
+      for idx in range( discard_posti_start, discard_posti_end):
+        assign_to_set[idx]=0
+    return assign_to_set
+      
     
   def assign_sets(self,assign_to_set):
     '''
@@ -200,8 +244,16 @@ class Patient_data():
         self.test_wos.append(idx)
       if(assign_to_set[idx]==4):
         self.test_ws.append(idx)
+    print(len(self.train_wos))
+    print(len(self.train_ws))
+    print(len(self.test_wos))
+    print(len(self.test_ws))
 
-  def train_next_batch(self,batch_size, num_input):
+  def train_next_batch(self,batch_size):
+    ''' 
+      input: size of the batch
+      output: data used for training the algorithms
+    '''
     train_batch = np.empty( [batch_size, 1, self.N_features , self.num_inputs] )
     train_annotations = np.empty( [batch_size, 2] )
     for i in range(0,batch_size):
@@ -214,16 +266,20 @@ class Patient_data():
         train_annotations[i] = [0,1]
     return train_batch, train_annotations
   
-  def get_test_batch(self,batch_size, num_input):
+  def get_test_batch(self,batch_size):
+    ''' 
+      input: size of the batch
+      output: data used for testing the algorithms
+    '''
     test_batch = np.empty( [batch_size, 1, self.N_features , self.num_inputs]  )
     test_annotations = np.empty( [batch_size, 2] )
     for i in range(0,batch_size):
       p = random.random()
       if(p<0.5):
-        test_batch[i] = self.get_batch(self.test_wos, num_input, self.segments_type_test)
+        test_batch[i] = self.get_batch(self.test_wos, self.num_inputs, self.segments_type_test)
         test_annotations[i] = [1,0]
       else:
-        test_batch[i] = self.get_batch(self.test_ws, num_input, self.segments_type_test)
+        test_batch[i] = self.get_batch(self.test_ws,self.num_inputs , self.segments_type_test)
         test_annotations[i] = [0,1]
     return test_batch, test_annotations
     
